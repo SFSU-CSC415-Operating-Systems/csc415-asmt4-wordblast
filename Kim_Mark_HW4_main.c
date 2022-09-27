@@ -20,16 +20,37 @@
 #include <unistd.h>
 #include <pthread.h>
 
+#define BUFFER_SIZE     128
 
 // You may find this Useful
 char * delim = "\"\'.“”‘’?:;-,—*($%)! \t\n\x0A\r";
 
-
+typedef struct 
+{
+    char *word;
+    int freq;
+} word_count;
 
 int main (int argc, char *argv[])
     {
     //***TO DO***  Look at arguments, open file, divide by threads
     //             Allocate and Initialize and storage structures
+    char *token;
+
+    FILE *in = fopen(argv[1], "r");
+    if (in == NULL) 
+    {
+        perror("Error: file could not be opened.");
+    };
+    word_count *words_v[] = malloc( sizeof(word_count) * 512 );
+    int words_c = 0;
+    token = strtok(buf, " \n\t\"");
+        sh_argc = 0;
+        while (token != NULL) {
+            sh_argv[sh_argc++] = token;
+            token = strtok(NULL, " \n\t\"");
+        }
+        sh_argv[sh_argc++] = NULL;
 
     //**************************************************************
     // DO NOT CHANGE THIS BLOCK
@@ -63,3 +84,5 @@ int main (int argc, char *argv[])
 
     // ***TO DO *** cleanup
     }
+
+int 
