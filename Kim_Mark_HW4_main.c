@@ -31,27 +31,31 @@ typedef struct
     int freq;
 } word_count;
 
+char* getWords();
+
 int main (int argc, char *argv[])
     {
     //***TO DO***  Look at arguments, open file, divide by threads
     //             Allocate and Initialize and storage structures
-    char *token;
+    char *token = malloc(64); // Longest word in a major dictionary is 45 letters long
     char *buffer = malloc(BUFFER_SIZE);
 
-    FILE *in = fopen(argv[1], "r");
-    if (in == NULL) 
+    FILE *file = fopen(argv[1], "r");
+    if (file == NULL) 
     {
         perror("Error: file could not be opened.");
     };
     word_count *words_v[] = malloc( sizeof(word_count) * 512 );
     int words_c = 0;
-    token = strtok(in, delim);
-    words_c++;
-    while (token != NULL) {
-        words_v[words_c++] = token;
-        token = strtok(NULL, delim);
+    while(fgets(buffer, BUFFER_SIZE, file)) {
+        token = strtok(file, delim);
+        words_c++;
+        while (token != NULL) {
+            words_v[words_c++] = token;
+            token = strtok(NULL, delim);
+        }
     }
-    words_v[words_c++] = NULL;
+    
 
     //**************************************************************
     // DO NOT CHANGE THIS BLOCK
@@ -85,5 +89,3 @@ int main (int argc, char *argv[])
 
     // ***TO DO *** cleanup
     }
-
-int 
