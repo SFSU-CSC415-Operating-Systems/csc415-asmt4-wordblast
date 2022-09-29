@@ -19,22 +19,14 @@
 #include <time.h>
 #include <unistd.h>
 #include <pthread.h>
+#include <string.h>
+#include <strings.h>
 
 #define INITIAL_ARRAY_SIZE  500
 #define QTY_TOP_WORDS        10
 
 // You may find this Useful
 char * delim = "\"\'.“”‘’?:;-,—*($%)! \t\n\x0A\r";
-
-typedef struct
-{
-    char *text;
-    word_arr *words;
-    pthread_t thread_id;
-    pthread_mutex_t mutex;
-    int thread_num;
-    int chunk_size;
-} thread_info;
 
 typedef struct 
 {
@@ -49,11 +41,25 @@ typedef struct
     size_t size;
 } word_arr;
 
-void init_array(word_arr *words, size_t size);
+typedef struct
+{
+    char *text;
+    volatile word_arr *words;
+    pthread_t thread_id;
+    pthread_mutex_t mutex;
+    int thread_num;
+    int chunk_size;
+} thread_info;
 
-void insert_array(word_arr *words, word_freq *word);
+void init_array(volatile word_arr *words, size_t size);
 
-void free_array(word_arr *words);
+void insert_array(volatile word_arr *words, word_freq *word);
+
+void free_array(volatile word_arr *words);
+
+void free_tinfo(thread_info *tinfo);
+
+void *test_array( volatile word_arr *words, char *text );
 
 void *process_chunk( void *arg );
 
@@ -77,8 +83,8 @@ int main (int argc, char *argv[])
     FILE *in_file = fopen(argv[1], "r");
 
     // Initialize the word count array
-    volatile word_arr *word_freq;
-    init_array(word_freq, INITIAL_ARRAY_SIZE);
+    volatile word_arr *word_freq_arr;
+    init_array(word_freq_arr, INITIAL_ARRAY_SIZE);
 
     // Check to see if fopen succeeds
     if (!in_file) 
@@ -103,11 +109,11 @@ int main (int argc, char *argv[])
     fread(buffer, sizeof(char), file_length, in_file);
     fclose(in_file);
 
-    pthread_mutex_t mutex;
-    if (pthread_mutex_init(&mutex, NULL) != 0) {
-        perror("Error: mutex init failed.");
-        return EXIT_FAILURE;
-    }
+    // pthread_mutex_t mutex;
+    // if (pthread_mutex_init(&mutex, NULL) != 0) {
+    //     perror("Error: mutex init failed.");
+    //     return EXIT_FAILURE;
+    // }
 
     //**************************************************************
     // DO NOT CHANGE THIS BLOCK
@@ -120,38 +126,46 @@ int main (int argc, char *argv[])
     // *** TO DO ***  start your thread processing
     //                wait for the threads to finish
 
-    thread_info *tinfo = (thread_info*)calloc(thread_count, sizeof(*tinfo));
-    if (tinfo == NULL)
-    {
-        perror("Error: calloc failed");
-        return EXIT_FAILURE;
-    }
+    // thread_info *tinfo = (thread_info*)calloc(thread_count, sizeof(*tinfo));
+    // if (tinfo == NULL)
+    // {
+    //     perror("Error: calloc failed");
+    //     return EXIT_FAILURE;
+    // }
 
-    for (int i = 0; i < thread_count; i++)
-    {
-        tinfo[i].text = buffer;
-        tinfo[i].words = word_freq;
-        tinfo[i].chunk_size = file_length / thread_count;
-        tinfo[i].thread_num = i;
-        tinfo[i].mutex = mutex;
-        if(pthread_create(&tinfo[i].thread_id, NULL, process_chunk, &tinfo[i]))
-        {
-            perror("Error: pthread_create failed");
-        };
-    }
+    // for (int i = 0; i < thread_count; i++)
+    // {
+    //     tinfo[i].text = buffer;
+    //     tinfo[i].words = word_freq_arr;
+    //     tinfo[i].chunk_size = file_length / thread_count;
+    //     tinfo[i].thread_num = i;
+    //     tinfo[i].mutex = mutex;
+    //     if(pthread_create(&tinfo[i].thread_id, NULL, process_chunk, &tinfo[i]))
+    //     {
+    //         perror("Error: pthread_create failed");
+    //     };
+    // }
 
-    for (int i = 0; i < thread_count; i++)
-    {
-        if(pthread_join(tinfo[i].thread_id, &res))
-        {
-            perror("Error: pthread_join failed");
-            return EXIT_FAILURE;
-        };
+    // for (int i = 0; i < thread_count; i++)
+    // {
+    //     if(pthread_join(tinfo[i].thread_id, &res))
+    //     {
+    //         perror("Error: pthread_join failed");
+    //         return EXIT_FAILURE;
+    //     };
+    // }
+    test_array(word_freq_arr, buffer);
+
+    printf("First 10 words in array");
+    for (int i = 0; i < word_freq_arr->used; i++) {
+        if (i < 10) {
+            printf("'%s': %d", word_freq_arr->arr[i].word, word_freq_arr->arr[i].freq);
+        }
     }
 
     // ***TO DO *** Process TOP 10 and display
-    word_arr *highest_counts = malloc(QTY_TOP_WORDS * sizeof(word_freq));
-    word_freq->size;
+    // word_arr *highest_counts = malloc(QTY_TOP_WORDS * sizeof(word_freq));
+    // word_freq_arr->size;
 
     //**************************************************************
     // DO NOT CHANGE THIS BLOCK
@@ -172,26 +186,26 @@ int main (int argc, char *argv[])
     // ***TO DO *** cleanup
     free(buffer);
     buffer = NULL;
-    free_tinfo(tinfo);
+    // free_tinfo(tinfo);
 }
 
-void init_array(word_arr *words, size_t size)
+void init_array(volatile word_arr *words, size_t size)
 {
-    words->arr = malloc(sizeof(word_freq) * size);
+    words->arr = malloc(size, sizeof(char));
     words->used = 0;
     words->size = size;
 }
 
-void insert_array(word_arr *words, word_freq *word)
+void insert_array(volatile word_arr *words, word_freq *word)
 {
-    if ( words->used >= words->size ) {
+    if ( words->used == words->size ) {
         words->size *= 2;
         words->arr = realloc(words->arr, words->size * sizeof(word_freq));
     }
     words->arr[words->used++].word = word;
 };
 
-void free_array(word_arr *words) 
+void free_array(volatile word_arr *words) 
 {
     for (int i = 0; i < words->used; i++ ) {
         free(words->arr[i].word);
@@ -210,6 +224,30 @@ void free_tinfo(thread_info *tinfo)
     tinfo->chunk_size = tinfo->thread_num = 0;
 }
 
+void *test_array( volatile word_arr *words, char *text )
+{
+    char *chunk = malloc(words->size/5);
+    chunk = strncpy(chunk, text, words->size/5);
+    char *lasts;
+    // Largest dictionary word is 49, so we initialize a byte size that is slightly greater
+    char *token = strtok_r(chunk, delim, &lasts);
+    while (token) {
+        if (strlen(token) > 5) {
+            word_freq *new_word = malloc(sizeof(word_freq));
+            new_word->word = malloc(strlen(token));
+            new_word->freq = 1;
+            if (words->used == words->size) {
+                words->size *= 2;
+                words->arr = realloc(words->arr, words->size * sizeof(word_freq));
+            }
+            words->arr[words->used++].word = new_word;
+        }
+        token = strtok_r(NULL, delim, &lasts);
+    }
+    free(chunk);
+    chunk = NULL;
+};
+
 void *process_chunk( void *arg )
 {
     thread_info *tinfo = arg;
@@ -224,35 +262,47 @@ void *process_chunk( void *arg )
             char exists = 0;
             for (int i = 0; i < tinfo->words->used; i++)
             {
-                if (!strcasecmp(tinfo->words->arr[i].word, token))
-                {
-                    exists = 1;
-                    if(pthread_mutex_lock(&tinfo->mutex))
-                    {
-                        perror("Error: mutex lock failed.");
-                    };
-                    tinfo->words->arr[i].freq++;
-                    if(pthread_mutex_unlock(&tinfo->mutex))
-                    {
-                        perror("Error: mutex failed to unlock");
-                    };
-                }
+                // {
+                //     exists = 1;
+                //     if(pthread_mutex_lock(&tinfo->mutex))
+                //     {
+                //         perror("Error: mutex lock failed.");
+                //     };
+                //     tinfo->words->arr[i].freq++;
+                //     if(pthread_mutex_unlock(&tinfo->mutex))
+                //     {
+                //         perror("Error: mutex failed to unlock");
+                //     };
+                // }
+                // if (!strcasecmp(tinfo->words->arr[i].word, token))
+                // {
+                //     exists = 1;
+                //     if(pthread_mutex_lock(&tinfo->mutex))
+                //     {
+                //         perror("Error: mutex lock failed.");
+                //     };
+                //     tinfo->words->arr[i].freq++;
+                //     if(pthread_mutex_unlock(&tinfo->mutex))
+                //     {
+                //         perror("Error: mutex failed to unlock");
+                //     };
+                // }
             }
             
-            if (!exists) {
-                if (pthread_mutex_lock(&tinfo->mutex))
-                {
-                    perror("Error: mutex lock failed.");
-                };
-                word_freq *new_word = malloc(sizeof(word_freq));
-                new_word->word = malloc(strlen(token));
-                new_word->freq = 1;
-                insert_array(tinfo->words, new_word);
-                if(pthread_mutex_unlock(&tinfo->mutex))
-                {
-                    perror("Error: mutex failed to unlock");
-                };
-            }
+            // if (!exists) {
+            //     if (pthread_mutex_lock(&tinfo->mutex))
+            //     {
+            //         perror("Error: mutex lock failed.");
+            //     };
+            //     word_freq *new_word = malloc(sizeof(word_freq));
+            //     new_word->word = malloc(strlen(token));
+            //     new_word->freq = 1;
+            //     insert_array(tinfo->words, new_word);
+            //     if(pthread_mutex_unlock(&tinfo->mutex))
+            //     {
+            //         perror("Error: mutex failed to unlock");
+            //     };
+            // }
         }
         token = strtok_r(NULL, delim, &lasts);
     }
