@@ -19,6 +19,7 @@
 #include <time.h>
 #include <unistd.h>
 #include <pthread.h>
+#include <string.h>
 
 #define INITIAL_ARRAY_SIZE  500
 #define QTY_TOP_WORDS        10
@@ -26,7 +27,20 @@
 // You may find this Useful
 char * delim = "\"\'.“”‘’?:;-,—*($%)! \t\n\x0A\r";
 
-typedef struct
+typedef struct word_freq
+{
+    char *word;
+    int freq;
+} word_freq;
+
+typedef struct word_arr
+{
+    word_freq *arr;
+    size_t used;
+    size_t size;
+} word_arr;
+
+typedef struct thread_info
 {
     char *text;
     word_arr *words;
@@ -36,24 +50,13 @@ typedef struct
     int chunk_size;
 } thread_info;
 
-typedef struct 
-{
-    char *word;
-    int freq;
-} word_freq;
-
-typedef struct
-{
-    word_freq *arr;
-    size_t used;
-    size_t size;
-} word_arr;
-
 void init_array(word_arr *words, size_t size);
 
 void insert_array(word_arr *words, word_freq *word);
 
 void free_array(word_arr *words);
+
+void free_tinfo(thread_info *tinfo);
 
 void *process_chunk( void *arg );
 
@@ -77,7 +80,7 @@ int main (int argc, char *argv[])
     FILE *in_file = fopen(argv[1], "r");
 
     // Initialize the word count array
-    volatile word_arr *word_freq;
+    word_arr *word_freq = malloc(sizeof(word_arr));
     init_array(word_freq, INITIAL_ARRAY_SIZE);
 
     // Check to see if fopen succeeds
