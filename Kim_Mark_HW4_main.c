@@ -217,10 +217,6 @@ void insert_array(array *words, char *token)
     new_word.word = malloc(strlen(token)+1);
     strcpy(new_word.word, token);
     words->arr[words->used++] = new_word;
-    // words->arr[words->used].freq = 1;
-    // words->arr[words->used].word = malloc(strlen(token)+1);
-    // strcpy(words->arr[words->used].word, token);
-    // words->used++;
 }
 
 int compare(const void *a, const void *b) {
