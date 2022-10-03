@@ -21,8 +21,9 @@
 #include <pthread.h>
 #include <string.h>
 
-#define INITIAL_ARRAY_SIZE  500
-#define QTY_TOP_WORDS        10
+#define INITIAL_ARRAY_SIZE  50000   // array size to work with
+#define QTY_TOP_WORDS       10      // number of words to list
+#define STRING_LENGTH       6       // inclusive string length
 
 // You may find this Useful
 char * delim = "\"\'.“”‘’?:;-,—*($%)! \t\n\x0A\r";
@@ -36,7 +37,7 @@ typedef struct
 typedef struct
 {
     word_freq *arr;
-    volatile size_t used;
+    size_t used;
     size_t size;
 } array;
 
@@ -58,11 +59,13 @@ void free_array(array *words);
 
 void free_tinfo(thread_info *tinfo);
 
-void *test_array( array *words, char *text );
-
 void *process_chunk( void *arg );
 
-int max( int a, int b);
+void print_array(array *words);
+
+void sort(size_t size, word_freq *ptr);
+
+int compare(const void *a, const void *b);
 
 int main (int argc, char *argv[])
 {
@@ -157,24 +160,20 @@ int main (int argc, char *argv[])
         };
     }
 
-    // char *lasts;
-    // char *token = strtok_r(buffer, delim, &lasts);
-    // for (int i = 0; i < 5; i++) {
-    //     insert_array(words, token);
-    //     printf("Token: '%s'\n  Array element: %d\n  word: '%s'\n  freq: %d\n\n", 
-    //         token, i, words->arr[i].word, words->arr[i].freq);
-    //     token = strtok_r(NULL, delim, &lasts);
-    // }
+    // Initialize the top words count array
+    array *top_words = malloc(sizeof(array));
+    init_array(top_words, QTY_TOP_WORDS);
+    qsort(words->arr, words->size, sizeof(word_freq), compare);
 
-    // printf("RESULTS TEST:\nUSED: %lu\nSIZE: %lu\n", words->used, words->size);
-    // // printf("'%s': %d", words->arr[0]->word, words->arr[0]->freq);
-    // for (int i = 0; i < 5; i++) {
-    //     printf("%d   '%s': %d\n", i, words->arr[i].word, words->arr[i].freq);
-    // }
+    // print_array(words);
+
+    for (int i = 0; i < QTY_TOP_WORDS; i++)
+    {
+        top_words->arr[top_words->used++] = words->arr[i];
+    }
+    print_array(top_words);
 
     // ***TO DO *** Process TOP 10 and display
-    // array *highest_counts = malloc(QTY_TOP_WORDS * sizeof(word_freq));
-    // words->size;
 
     //**************************************************************
     // DO NOT CHANGE THIS BLOCK
@@ -193,10 +192,10 @@ int main (int argc, char *argv[])
 
 
     // ***TO DO *** cleanup
-    // free_tinfo(tinfo);
     free(buffer);
     buffer = NULL;
-    free_tinfo(tinfo);
+    // free_array(top_words);
+    // free_tinfo(tinfo);
     pthread_mutex_destroy(&mutex);
 }
 
@@ -214,19 +213,36 @@ void insert_array(array *words, char *token)
         words->arr = realloc(words->arr, words->size * sizeof(word_freq));
     }
     word_freq new_word;
-    new_word.word = token;
     new_word.freq = 1;
+    new_word.word = malloc(strlen(token)+1);
+    strcpy(new_word.word, token);
     words->arr[words->used++] = new_word;
-};
+    // words->arr[words->used].freq = 1;
+    // words->arr[words->used].word = malloc(strlen(token)+1);
+    // strcpy(words->arr[words->used].word, token);
+    // words->used++;
+}
+
+int compare(const void *a, const void *b) {
+    word_freq *x = (word_freq*) a;
+    word_freq *y = (word_freq*) b;
+    return y->freq - x->freq;
+}
 
 void free_array(array *words) 
 {
+    for (int i = 0; i < words->used; i++) {
+        if (words->arr[i].word != NULL) {
+            free(words->arr[i].word);
+            words->arr[i].word = NULL;
+        }
+    }
     free(words->arr);
     words->arr = NULL;
     words->used = words->size = 0;
     free(words);
     words = NULL;
-};
+}
 
 void free_tinfo(thread_info *tinfo)
 {
@@ -237,66 +253,25 @@ void free_tinfo(thread_info *tinfo)
     tinfo = NULL;
 }
 
-word_freq* merge( array *words, int l, int m, int r ) {
-    int i, j, k;
-    int n1 = m - l + 1;
-    int n2 = r - m;
-
-    word_freq left[n1], right[n2], ret_array[n1 + n2];
-
-    for (i = 0; i < n1; i++)
-        left[i] = words->arr[i];
-    for (j = 0; j < n2; j++)
-        right[j] = words->arr[m + 1 + j];
-
-    i = j = 0;
-    k = l;
-
-    while( i < n1 && j < n2)
+void print_array(array *words)
+{
+    printf("Array Size: %lu\n", words->used);
+    for (int i = 0; i < words->used; i++)
     {
-        if (left[i].freq <= right[j].freq) {
-            ret_array[k] = left[i];
-            i++;
-        } else {
-            ret_array[k] = right[j];
-            j++;
-        }
-        k++;
-    }
-
-    while (i < n1) {
-        ret_array[k] = left[i];
-        i++;
-        k++;
-    }
-
-    while (j < n2) {
-        ret_array[k] = right[j];
-        j++;
-        k++;
-    }
-    
-    return ret_array;
-}
-
-word_freq* merge_sort( array *words, int l, int r) {
-    if (l < r) {
-        int m = l + (r - l) / 2;
-        
+        printf("   '%s': %d\n", words->arr[i].word, words->arr[i].freq);
     }
 }
 
 void *process_chunk( void *arg )
 {
     thread_info *tinfo = arg;
-    char *chunk = malloc(tinfo->chunk_size);
+    char *chunk = malloc(tinfo->chunk_size + 1);
     char *chunk_start = tinfo->text + (tinfo->chunk_size * tinfo->thread_num);
     strncpy(chunk, chunk_start, tinfo->chunk_size);
     char *lasts;
-    // Largest dictionary word is 49, so we initialize a byte size that is slightly greater
     char *token = strtok_r(chunk, delim, &lasts);
-    while (token) {
-        if (strlen(token) > 5) {
+    while (token != NULL) {
+        if (strlen(token) >= STRING_LENGTH) {
             char exists = 0;
             for (int i = 0; i < tinfo->words->used; i++)
             {
@@ -331,8 +306,4 @@ void *process_chunk( void *arg )
     }
     free(chunk);
     chunk = NULL;
-};
-
-int max( int a, int b) {
-    return (a > b) ? a : b;
 }
