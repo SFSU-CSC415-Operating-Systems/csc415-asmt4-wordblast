@@ -21,7 +21,7 @@
 #include <pthread.h>
 #include <string.h>
 
-#define INITIAL_ARRAY_SIZE  50000   // array size to work with
+#define INITIAL_ARRAY_SIZE  500000  // array size to work with
 #define QTY_TOP_WORDS       10      // number of words to list
 #define STRING_LENGTH       6       // inclusive string length
 
@@ -161,7 +161,7 @@ int main (int argc, char *argv[])
     // Initialize the top words count array
     array *top_words = malloc(sizeof(array));
     init_array(top_words, QTY_TOP_WORDS);
-    // qsort(words->arr, words->size, sizeof(word_freq), compare);
+    qsort(words->arr, words->size, sizeof(word_freq), compare);
 
     // print_array(words);
 
@@ -209,7 +209,7 @@ void init_array(array *words, size_t size)
 void insert_array(array *words, char *token)
 {
     if ( words->used == words->size ) {
-        words->size *= 2;
+        words->size += 2;
         words->arr = realloc(words->arr, words->size * sizeof(word_freq));
     }
     word_freq new_word;
@@ -267,7 +267,7 @@ void *process_chunk( void *arg )
             {
                 // int cmp = ;
                 // printf("%d, ", cmp);
-                if (strcasecmp(tinfo->words->arr[i].word, token) == 0)
+                if (tinfo->words->arr[i].word != NULL && strcasecmp(tinfo->words->arr[i].word, token) == 0)
                 {
                     exists = 1;
                     if(pthread_mutex_lock(&tinfo->mutex))
