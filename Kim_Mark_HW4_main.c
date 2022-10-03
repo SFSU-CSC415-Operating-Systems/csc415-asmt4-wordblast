@@ -57,8 +57,6 @@ void insert_array(array *words, char *token);
 
 void free_array(array *words);
 
-void free_tinfo(thread_info *tinfo);
-
 void *process_chunk( void *arg );
 
 void print_array(array *words);
@@ -163,7 +161,7 @@ int main (int argc, char *argv[])
     // Initialize the top words count array
     array *top_words = malloc(sizeof(array));
     init_array(top_words, QTY_TOP_WORDS);
-    qsort(words->arr, words->size, sizeof(word_freq), compare);
+    // qsort(words->arr, words->size, sizeof(word_freq), compare);
 
     // print_array(words);
 
@@ -194,14 +192,16 @@ int main (int argc, char *argv[])
     // ***TO DO *** cleanup
     free(buffer);
     buffer = NULL;
-    // free_array(top_words);
-    // free_tinfo(tinfo);
+    free_array(words);
+    free(tinfo);
+    free(top_words->arr);
+    free(top_words);
     pthread_mutex_destroy(&mutex);
 }
 
 void init_array(array *words, size_t size)
 {
-    words->arr = malloc(size * sizeof(word_freq));
+    words->arr = calloc(size, sizeof(word_freq));
     words->used = 0;
     words->size = size;
 }
@@ -232,25 +232,14 @@ int compare(const void *a, const void *b) {
 void free_array(array *words) 
 {
     for (int i = 0; i < words->used; i++) {
-        if (words->arr[i].word != NULL) {
-            free(words->arr[i].word);
-            words->arr[i].word = NULL;
-        }
+        free(words->arr[i].word);
+        words->arr[i].word = NULL;
     }
     free(words->arr);
     words->arr = NULL;
     words->used = words->size = 0;
     free(words);
     words = NULL;
-}
-
-void free_tinfo(thread_info *tinfo)
-{
-    tinfo->text = NULL;
-    free_array(tinfo->words);
-    tinfo->chunk_size = tinfo->thread_num = 0;
-    free(tinfo);
-    tinfo = NULL;
 }
 
 void print_array(array *words)
@@ -265,16 +254,19 @@ void print_array(array *words)
 void *process_chunk( void *arg )
 {
     thread_info *tinfo = arg;
-    char *chunk = malloc(tinfo->chunk_size + 1);
+    // char *chunk = malloc(tinfo->chunk_size + 1);
+    char *chunk = calloc(tinfo->chunk_size + 1, sizeof(char));
     char *chunk_start = tinfo->text + (tinfo->chunk_size * tinfo->thread_num);
     strncpy(chunk, chunk_start, tinfo->chunk_size);
-    char *lasts;
+    char *lasts = chunk;
     char *token = strtok_r(chunk, delim, &lasts);
     while (token != NULL) {
         if (strlen(token) >= STRING_LENGTH) {
             char exists = 0;
             for (int i = 0; i < tinfo->words->used; i++)
             {
+                // int cmp = ;
+                // printf("%d, ", cmp);
                 if (strcasecmp(tinfo->words->arr[i].word, token) == 0)
                 {
                     exists = 1;
