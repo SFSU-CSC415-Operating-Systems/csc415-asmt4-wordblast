@@ -21,44 +21,51 @@
 #include <pthread.h>
 #include <string.h>
 
-#define INITIAL_ARRAY_SIZE  500
-#define QTY_TOP_WORDS        10
+#define INITIAL_ARRAY_SIZE  500000  // array size to work with
+#define QTY_TOP_WORDS       10      // number of words to list
+#define STRING_LENGTH       6       // inclusive string length
 
 // You may find this Useful
 char * delim = "\"\'.“”‘’?:;-,—*($%)! \t\n\x0A\r";
 
-typedef struct word_freq
+typedef struct 
 {
     char *word;
     int freq;
 } word_freq;
 
-typedef struct word_arr
+typedef struct
 {
     word_freq *arr;
     size_t used;
     size_t size;
-} word_arr;
+} array;
 
-typedef struct thread_info
+typedef struct
 {
     char *text;
-    word_arr *words;
+    array *words;
     pthread_t thread_id;
     pthread_mutex_t mutex;
     int thread_num;
     int chunk_size;
 } thread_info;
 
-void init_array(word_arr *words, size_t size);
+void init_array(array *words, size_t size);
 
-void insert_array(word_arr *words, word_freq *word);
+void insert_array(array *words, char *token);
 
-void free_array(word_arr *words);
+void free_array(array *words);
 
 void free_tinfo(thread_info *tinfo);
 
 void *process_chunk( void *arg );
+
+void print_array(array *words);
+
+void sort(size_t size, word_freq *ptr);
+
+int compare(const void *a, const void *b);
 
 int main (int argc, char *argv[])
 {
@@ -80,8 +87,8 @@ int main (int argc, char *argv[])
     FILE *in_file = fopen(argv[1], "r");
 
     // Initialize the word count array
-    word_arr *word_freq = malloc(sizeof(word_arr));
-    init_array(word_freq, INITIAL_ARRAY_SIZE);
+    array *words = malloc(sizeof(array));
+    init_array(words, INITIAL_ARRAY_SIZE);
 
     // Check to see if fopen succeeds
     if (!in_file) 
@@ -103,7 +110,8 @@ int main (int argc, char *argv[])
         return EXIT_FAILURE;
     };
 
-    fread(buffer, sizeof(char), file_length, in_file);
+    size_t num_elements = fread(buffer, sizeof(char), file_length, in_file);
+    printf("Number of Elements: %lu\n", num_elements);
     fclose(in_file);
 
     pthread_mutex_t mutex;
@@ -133,7 +141,7 @@ int main (int argc, char *argv[])
     for (int i = 0; i < thread_count; i++)
     {
         tinfo[i].text = buffer;
-        tinfo[i].words = word_freq;
+        tinfo[i].words = words;
         tinfo[i].chunk_size = file_length / thread_count;
         tinfo[i].thread_num = i;
         tinfo[i].mutex = mutex;
@@ -152,9 +160,20 @@ int main (int argc, char *argv[])
         };
     }
 
+    // Initialize the top words count array
+    array *top_words = malloc(sizeof(array));
+    init_array(top_words, QTY_TOP_WORDS);
+    qsort(words->arr, words->size, sizeof(word_freq), compare);
+
+    // print_array(words);
+
+    for (int i = 0; i < QTY_TOP_WORDS; i++)
+    {
+        top_words->arr[top_words->used++] = words->arr[i];
+    }
+    print_array(top_words);
+
     // ***TO DO *** Process TOP 10 and display
-    word_arr *highest_counts = malloc(QTY_TOP_WORDS * sizeof(word_freq));
-    word_freq->size;
 
     //**************************************************************
     // DO NOT CHANGE THIS BLOCK
@@ -175,59 +194,78 @@ int main (int argc, char *argv[])
     // ***TO DO *** cleanup
     free(buffer);
     buffer = NULL;
-    free_tinfo(tinfo);
+    free_array(words);
+    free(tinfo);
+    free(top_words->arr);
+    free(top_words);
+    pthread_mutex_destroy(&mutex);
 }
 
-void init_array(word_arr *words, size_t size)
+void init_array(array *words, size_t size)
 {
-    words->arr = malloc(sizeof(word_freq) * size);
+    words->arr = calloc(size, sizeof(word_freq));
     words->used = 0;
     words->size = size;
 }
 
-void insert_array(word_arr *words, word_freq *word)
+void insert_array(array *words, char *token)
 {
-    if ( words->used >= words->size ) {
-        words->size *= 2;
+    if ( words->used == words->size ) {
+        words->size += 2;
         words->arr = realloc(words->arr, words->size * sizeof(word_freq));
     }
-    words->arr[words->used++].word = word;
-};
+    word_freq new_word;
+    new_word.freq = 1;
+    new_word.word = malloc(strlen(token)+1);
+    strcpy(new_word.word, token);
+    words->arr[words->used++] = new_word;
+}
 
-void free_array(word_arr *words) 
+int compare(const void *a, const void *b) {
+    word_freq *x = (word_freq*) a;
+    word_freq *y = (word_freq*) b;
+    return y->freq - x->freq;
+}
+
+void free_array(array *words) 
 {
-    for (int i = 0; i < words->used; i++ ) {
+    for (int i = 0; i < words->used; i++) {
         free(words->arr[i].word);
         words->arr[i].word = NULL;
     }
     free(words->arr);
     words->arr = NULL;
     words->used = words->size = 0;
-};
+    free(words);
+    words = NULL;
+}
 
-void free_tinfo(thread_info *tinfo)
+void print_array(array *words)
 {
-    free(tinfo->text);
-    tinfo->text = NULL;
-    free_array(tinfo->words);
-    tinfo->chunk_size = tinfo->thread_num = 0;
+    printf("Array Size: %lu\n", words->used);
+    for (int i = 0; i < words->used; i++)
+    {
+        printf("   '%s': %d\n", words->arr[i].word, words->arr[i].freq);
+    }
 }
 
 void *process_chunk( void *arg )
 {
     thread_info *tinfo = arg;
-    char *chunk = malloc(tinfo->chunk_size);
+    // char *chunk = malloc(tinfo->chunk_size + 1);
+    char *chunk = calloc(tinfo->chunk_size + 1, sizeof(char));
     char *chunk_start = tinfo->text + (tinfo->chunk_size * tinfo->thread_num);
     strncpy(chunk, chunk_start, tinfo->chunk_size);
-    char *lasts;
-    // Largest dictionary word is 49, so we initialize a byte size that is slightly greater
+    char *lasts = chunk;
     char *token = strtok_r(chunk, delim, &lasts);
-    while (token) {
-        if (strlen(token) > 5) {
+    while (token != NULL) {
+        if (strlen(token) >= STRING_LENGTH) {
             char exists = 0;
             for (int i = 0; i < tinfo->words->used; i++)
             {
-                if (!strcasecmp(tinfo->words->arr[i].word, token))
+                // int cmp = ;
+                // printf("%d, ", cmp);
+                if (tinfo->words->arr[i].word != NULL && strcasecmp(tinfo->words->arr[i].word, token) == 0)
                 {
                     exists = 1;
                     if(pthread_mutex_lock(&tinfo->mutex))
@@ -247,10 +285,7 @@ void *process_chunk( void *arg )
                 {
                     perror("Error: mutex lock failed.");
                 };
-                word_freq *new_word = malloc(sizeof(word_freq));
-                new_word->word = malloc(strlen(token));
-                new_word->freq = 1;
-                insert_array(tinfo->words, new_word);
+                insert_array(tinfo->words, token);
                 if(pthread_mutex_unlock(&tinfo->mutex))
                 {
                     perror("Error: mutex failed to unlock");
@@ -261,4 +296,4 @@ void *process_chunk( void *arg )
     }
     free(chunk);
     chunk = NULL;
-};
+}
