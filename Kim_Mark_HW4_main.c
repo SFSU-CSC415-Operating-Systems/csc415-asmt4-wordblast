@@ -21,19 +21,21 @@
 #include <pthread.h>
 #include <string.h>
 
-#define INITIAL_ARRAY_SIZE  500000  // array size to work with
+#define INITIAL_ARRAY_SIZE  50000   // array size to work with
 #define QTY_TOP_WORDS       10      // number of words to list
 #define STRING_LENGTH       6       // inclusive string length
 
 // You may find this Useful
 char * delim = "\"\'.“”‘’?:;-,—*($%)! \t\n\x0A\r";
 
+// Data structure for words with frequency count
 typedef struct 
 {
     char *word;
     int freq;
 } word_freq;
 
+// Data structure for dynamic array
 typedef struct
 {
     word_freq *arr;
@@ -41,6 +43,7 @@ typedef struct
     size_t size;
 } array;
 
+// Data structure of thread info to be passed into pthread_create
 typedef struct
 {
     char *text;
@@ -51,6 +54,7 @@ typedef struct
     int chunk_size;
 } thread_info;
 
+// Function prototypes
 void init_array(array *words, size_t size);
 
 void insert_array(array *words, char *token);
@@ -62,8 +66,6 @@ void free_tinfo(thread_info *tinfo);
 void *process_chunk( void *arg );
 
 void print_array(array *words);
-
-void sort(size_t size, word_freq *ptr);
 
 int compare(const void *a, const void *b);
 
@@ -84,23 +86,31 @@ int main (int argc, char *argv[])
     void *res;
 
     // Open file provided in first argument
-    FILE *in_file = fopen(argv[1], "r");
+    int file = open(argv[1], O_RDONLY);
+    if (file == -1)
+    {
+        perror("ERROR: file could not be opened.");
+        return EXIT_FAILURE;
+    };
+
+    // Seek to end of file to find file length
+    int file_length = lseek(file, 0, SEEK_END);
+    if (file_length = -1)
+    {
+        perror("ERROR: lseek to end failed.");
+        return EXIT_FAILURE;
+    }
+
+    // Reset pointer to beginning of file
+    if (lseek(file, 0, SEEK_SET) == -1)
+    {
+        perror("ERROR: lseek to beginning failed.");
+        return EXIT_FAILURE;
+    }
 
     // Initialize the word count array
     array *words = malloc(sizeof(array));
     init_array(words, INITIAL_ARRAY_SIZE);
-
-    // Check to see if fopen succeeds
-    if (!in_file) 
-    {
-        perror("Error: file could not be opened.");
-        return EXIT_FAILURE;
-    };
-
-    // Move to end of file to get file length and move pointer back to the beginning
-    fseek(in_file, 0, SEEK_END);
-    const int file_length = ftell(in_file);
-    fseek(in_file, 0, SEEK_SET);
 
     // Reserve sufficient memory to store the entire text file
     char *buffer = malloc(file_length);
@@ -110,10 +120,24 @@ int main (int argc, char *argv[])
         return EXIT_FAILURE;
     };
 
-    size_t num_elements = fread(buffer, sizeof(char), file_length, in_file);
-    printf("Number of Elements: %lu\n", num_elements);
-    fclose(in_file);
+    // Read entire file into buffer
+    int read_result = read(file, buffer, file_length);
+    if (read_result == -1)
+    {
+        perror("Error: read file into buffer failed.");
+        return EXIT_FAILURE;
+    }
 
+    // Close file
+    if (close(file) == -1)
+    {
+        perror("Error: file close failed.");
+        return EXIT_FAILURE;
+    }
+    
+    printf("Number of Elements: %lu\n", read_result);
+
+    // Initialize mutex
     pthread_mutex_t mutex;
     if (pthread_mutex_init(&mutex, NULL) != 0) {
         perror("Error: mutex init failed.");
@@ -131,6 +155,7 @@ int main (int argc, char *argv[])
     // *** TO DO ***  start your thread processing
     //                wait for the threads to finish
 
+    // Declare and allocate memory for tinfo array to pass into each thread
     thread_info *tinfo = (thread_info*)calloc(thread_count, sizeof(*tinfo));
     if (tinfo == NULL)
     {
@@ -138,19 +163,24 @@ int main (int argc, char *argv[])
         return EXIT_FAILURE;
     }
 
+    // Loop to initialize thread info for each thread and create threads to
+    // process chunks of data
     for (int i = 0; i < thread_count; i++)
     {
-        tinfo[i].text = buffer;
-        tinfo[i].words = words;
+        tinfo[i].text = buffer;     // pointer to full text
+        tinfo[i].words = words;     // pointer to array of word counts
+        // Split file into parts equalling thread count
         tinfo[i].chunk_size = file_length / thread_count;
-        tinfo[i].thread_num = i;
-        tinfo[i].mutex = mutex;
+        tinfo[i].thread_num = i;    // number of thread
+        tinfo[i].mutex = mutex;     // pass in mutex for thread locks
+        // Create threads
         if(pthread_create(&tinfo[i].thread_id, NULL, process_chunk, &tinfo[i]))
         {
             perror("Error: pthread_create failed");
         };
     }
 
+    // Loop to join threads
     for (int i = 0; i < thread_count; i++)
     {
         if(pthread_join(tinfo[i].thread_id, &res))
@@ -201,6 +231,7 @@ int main (int argc, char *argv[])
     pthread_mutex_destroy(&mutex);
 }
 
+// Initialize dynamic array
 void init_array(array *words, size_t size)
 {
     words->arr = calloc(size, sizeof(word_freq));
@@ -208,25 +239,36 @@ void init_array(array *words, size_t size)
     words->size = size;
 }
 
+// Insert new word into dynamic array
+// NOT thread safe: requires mutex lock.  Race conditions exist.
 void insert_array(array *words, char *token)
 {
+    // Check if current array is full and reallocate memory if necessary
     if ( words->used == words->size ) {
         words->size += 2;
         words->arr = realloc(words->arr, words->size * sizeof(word_freq));
     }
+    // Initialize new word_freq count struct to be inserted into array
+    // Mutex lock not necessary here
     word_freq new_word;
     new_word.freq = 1;
+    // Must copy token into word, otherwise the pointer will point to whatever
+    // token is pointing at
     new_word.word = malloc(strlen(token)+1);
     strcpy(new_word.word, token);
+    // Mutex lock necessary here
     words->arr[words->used++] = new_word;
 }
 
+// Compare function to return a positive number if b > a, a negative number if
+// b < a, or 0 if the counts are equal
 int compare(const void *a, const void *b) {
     word_freq *x = (word_freq*) a;
     word_freq *y = (word_freq*) b;
     return y->freq - x->freq;
 }
 
+// Free entire array
 void free_array(array *words) 
 {
     for (int i = 0; i < words->used; i++) {
@@ -240,6 +282,7 @@ void free_array(array *words)
     words = NULL;
 }
 
+// Print array
 void print_array(array *words)
 {
     printf("Array Size: %lu\n", words->used);
@@ -249,25 +292,37 @@ void print_array(array *words)
     }
 }
 
+// Process chunks function to pass into pthread_create
 void *process_chunk( void *arg )
 {
+    // Thread info arguments passed in for use by each thread
     thread_info *tinfo = arg;
-    // char *chunk = malloc(tinfo->chunk_size + 1);
+
+    // Chunk data into pieces for each thread
     char *chunk = calloc(tinfo->chunk_size + 1, sizeof(char));
     char *chunk_start = tinfo->text + (tinfo->chunk_size * tinfo->thread_num);
     strncpy(chunk, chunk_start, tinfo->chunk_size);
+
+    // Tokenization and processing of chunk
     char *lasts = chunk;
     char *token = strtok_r(chunk, delim, &lasts);
     while (token != NULL) {
+
+        // Check if token length satisfied string length requirement
         if (strlen(token) >= STRING_LENGTH) {
+
+            // Check if token exists in word array; initialize to false
             char exists = 0;
             for (int i = 0; i < tinfo->words->used; i++)
             {
-                // int cmp = ;
-                // printf("%d, ", cmp);
-                if (tinfo->words->arr[i].word != NULL && strcasecmp(tinfo->words->arr[i].word, token) == 0)
+
+                // Increment word count if token matches a word in the array
+                if (tinfo->words->arr[i].word != NULL && 
+                    strcasecmp(tinfo->words->arr[i].word, token) == 0)
                 {
                     exists = 1;
+
+                    // Mutex lock necessary for incrementing word count
                     if(pthread_mutex_lock(&tinfo->mutex))
                     {
                         perror("Error: mutex lock failed.");
@@ -280,7 +335,10 @@ void *process_chunk( void *arg )
                 }
             }
             
+            // Insert new word into array if it does not already exist
             if (!exists) {
+
+                // Mutex necessary for inserting new word into array
                 if (pthread_mutex_lock(&tinfo->mutex))
                 {
                     perror("Error: mutex lock failed.");
@@ -294,6 +352,8 @@ void *process_chunk( void *arg )
         }
         token = strtok_r(NULL, delim, &lasts);
     }
+
+    // Cleanup
     free(chunk);
     chunk = NULL;
 }
