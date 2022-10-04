@@ -195,18 +195,18 @@ int main (int argc, char *argv[])
     }
 
     // Initialize the top words count array
-    array *top_words = malloc(sizeof(array));
-    init_array(top_words, QTY_TOP_WORDS);
+    // array *top_words = malloc(sizeof(array));
+    // init_array(top_words, QTY_TOP_WORDS);
     // selection_sort(words);
     quick_sort(words, 0, words->used);
 
     // print_array(words);
 
-    for (int i = 0; i < QTY_TOP_WORDS; i++)
-    {
-        top_words->arr[top_words->used++] = words->arr[i];
-    }
-    print_results(top_words, argv[1], thread_count, QTY_TOP_WORDS, STRING_LENGTH);
+    // for (int i = 0; i < QTY_TOP_WORDS; i++)
+    // {
+    //     top_words->arr[top_words->used++] = words->arr[i];
+    // }
+    print_results(words, argv[1], thread_count, QTY_TOP_WORDS, STRING_LENGTH);
 
     // ***TO DO *** Process TOP 10 and display
 
@@ -231,8 +231,8 @@ int main (int argc, char *argv[])
     buffer = NULL;
     free_array(words);
     free(tinfo);
-    free(top_words->arr);
-    free(top_words);
+    // free(top_words->arr);
+    // free(top_words);
     pthread_mutex_destroy(&mutex);
 }
 
@@ -339,7 +339,7 @@ void print_results(array *words, char *filename,
 {
     printf("\n\nWord Frequency Count on %s with %d threads.\n", filename, num_threads);
     printf("Printing top %d words %d characters or more.\n", num_words, num_chars);
-    for (int i = 0; i < words->used; i++)
+    for (int i = 0; i < num_words; i++)
     {
         printf("Number %d is '%s' with a count of %d\n", 
             i + 1, words->arr[i].word, words->arr[i].freq);
