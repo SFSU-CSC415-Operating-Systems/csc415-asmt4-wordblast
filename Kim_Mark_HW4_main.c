@@ -337,7 +337,7 @@ void free_array(array *words)
 void print_results(array *words, char *filename, 
     int num_threads, int num_words, int num_chars)
 {
-    printf("\nWord Frequency Count on %s with %d threads.\n", filename, num_threads);
+    printf("Word Frequency Count on %s with %d threads.\n", filename, num_threads);
     printf("Printing top %d words %d characters or more.\n", num_words, num_chars);
     for (int i = 0; i < num_words; i++)
     {
