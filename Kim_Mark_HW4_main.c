@@ -8,6 +8,13 @@
 * File: Kim_Mark_HW4_main.c
 *
 * Description:
+* This program will read a text file and form a vocabulary with a count of 
+* each word found within the text.  This process can occur with multi-threading
+* with the number of threads determined by the second argument given.  Once
+* complete, the program will print out the top 10 words with a length of 6 or
+* greater.  Each run of the program will give a total run time which can be used 
+* to evaluate the speed of each run with respect to the number of threads being
+* used.
 *
 **************************************************************/
 
@@ -54,20 +61,16 @@ typedef struct
     int chunk_size;
 } thread_info;
 
-// Function prototypes
 void init_array(array *words, size_t size);
-
 void insert_array(array *words, char *token);
-
 void free_array(array *words);
-
-void free_tinfo(thread_info *tinfo);
-
 void *process_chunk( void *arg );
-
-void print_array(array *words);
-
-int compare(const void *a, const void *b);
+void print_results(array *words, char *filename, 
+    int num_threads, int num_words, int num_chars);
+void selection_sort(array *ptr);
+int partition(array *ptr, int low, int high);
+void quick_sort(array *ptr, int low, int high);
+void swap(word_freq *a, word_freq *b);
 
 int main (int argc, char *argv[])
 {
@@ -95,7 +98,7 @@ int main (int argc, char *argv[])
 
     // Seek to end of file to find file length
     int file_length = lseek(file, 0, SEEK_END);
-    if (file_length = -1)
+    if (file_length == -1)
     {
         perror("ERROR: lseek to end failed.");
         return EXIT_FAILURE;
@@ -134,13 +137,20 @@ int main (int argc, char *argv[])
         perror("Error: file close failed.");
         return EXIT_FAILURE;
     }
-    
-    printf("Number of Elements: %lu\n", read_result);
 
     // Initialize mutex
     pthread_mutex_t mutex;
-    if (pthread_mutex_init(&mutex, NULL) != 0) {
+    if (pthread_mutex_init(&mutex, NULL) != 0) 
+    {
         perror("Error: mutex init failed.");
+        return EXIT_FAILURE;
+    }
+
+    // Declare and allocate memory for tinfo array to pass into each thread
+    thread_info *tinfo = (thread_info*)calloc(thread_count, sizeof(*tinfo));
+    if (tinfo == NULL)
+    {
+        perror("Error: calloc failed");
         return EXIT_FAILURE;
     }
 
@@ -155,14 +165,6 @@ int main (int argc, char *argv[])
     // *** TO DO ***  start your thread processing
     //                wait for the threads to finish
 
-    // Declare and allocate memory for tinfo array to pass into each thread
-    thread_info *tinfo = (thread_info*)calloc(thread_count, sizeof(*tinfo));
-    if (tinfo == NULL)
-    {
-        perror("Error: calloc failed");
-        return EXIT_FAILURE;
-    }
-
     // Loop to initialize thread info for each thread and create threads to
     // process chunks of data
     for (int i = 0; i < thread_count; i++)
@@ -170,7 +172,9 @@ int main (int argc, char *argv[])
         tinfo[i].text = buffer;     // pointer to full text
         tinfo[i].words = words;     // pointer to array of word counts
         // Split file into parts equalling thread count
-        tinfo[i].chunk_size = file_length / thread_count;
+        tinfo[i].chunk_size = i == thread_count - 1
+            ? file_length - ((thread_count - 1) * (int)(file_length / thread_count)) 
+            : file_length / thread_count;
         tinfo[i].thread_num = i;    // number of thread
         tinfo[i].mutex = mutex;     // pass in mutex for thread locks
         // Create threads
@@ -193,7 +197,8 @@ int main (int argc, char *argv[])
     // Initialize the top words count array
     array *top_words = malloc(sizeof(array));
     init_array(top_words, QTY_TOP_WORDS);
-    qsort(words->arr, words->size, sizeof(word_freq), compare);
+    // selection_sort(words);
+    quick_sort(words, 0, words->used);
 
     // print_array(words);
 
@@ -201,7 +206,7 @@ int main (int argc, char *argv[])
     {
         top_words->arr[top_words->used++] = words->arr[i];
     }
-    print_array(top_words);
+    print_results(top_words, argv[1], thread_count, QTY_TOP_WORDS, STRING_LENGTH);
 
     // ***TO DO *** Process TOP 10 and display
 
@@ -244,8 +249,9 @@ void init_array(array *words, size_t size)
 void insert_array(array *words, char *token)
 {
     // Check if current array is full and reallocate memory if necessary
-    if ( words->used == words->size ) {
-        words->size += 2;
+    if ( words->used == words->size ) 
+    {
+        words->size += words->size;
         words->arr = realloc(words->arr, words->size * sizeof(word_freq));
     }
     // Initialize new word_freq count struct to be inserted into array
@@ -260,18 +266,63 @@ void insert_array(array *words, char *token)
     words->arr[words->used++] = new_word;
 }
 
-// Compare function to return a positive number if b > a, a negative number if
-// b < a, or 0 if the counts are equal
-int compare(const void *a, const void *b) {
-    word_freq *x = (word_freq*) a;
-    word_freq *y = (word_freq*) b;
-    return y->freq - x->freq;
+// Selection Sort for array
+void selection_sort(array *ptr)
+{
+    for (int i = 0; i < ptr->used; i++)
+    {
+        for (int j = i + 1; j < ptr->used; j++)
+        {
+            if (ptr->arr[i].freq < ptr->arr[j].freq)
+            {
+                swap(&ptr->arr[i], &ptr->arr[j]);
+            }
+        }
+    }
+}
+
+// Partition array for quick_sort
+int partition(array *ptr, int low, int high)
+{
+    word_freq pivot = ptr->arr[high];
+    int i = (low - 1);
+
+    for (int j = low; j <= high - 1; j++)
+    {
+        if (ptr->arr[j].freq > pivot.freq)
+        {
+            i++;
+            swap(&ptr->arr[i], &ptr->arr[j]);
+        }
+    }
+    swap(&ptr->arr[i+1], &ptr->arr[high]);
+    return (i + 1);
+}
+
+// Quick Sort for array (recursive)
+void quick_sort(array *ptr, int low, int high)
+{
+    if (low < high)
+    {
+        int pi = partition(ptr, low, high);
+        quick_sort(ptr, low, pi - 1);
+        quick_sort(ptr, pi + 1, high);
+    }
+}
+
+// Swap for both quick sort and selection sort
+void swap(word_freq *a, word_freq *b)
+{
+    word_freq temp = *a;
+    *a = *b;
+    *b = temp;
 }
 
 // Free entire array
 void free_array(array *words) 
 {
-    for (int i = 0; i < words->used; i++) {
+    for (int i = 0; i < words->used; i++) 
+    {
         free(words->arr[i].word);
         words->arr[i].word = NULL;
     }
@@ -282,13 +333,16 @@ void free_array(array *words)
     words = NULL;
 }
 
-// Print array
-void print_array(array *words)
+// Print results
+void print_results(array *words, char *filename, 
+    int num_threads, int num_words, int num_chars)
 {
-    printf("Array Size: %lu\n", words->used);
+    printf("\n\nWord Frequency Count on %s with %d threads.\n", filename, num_threads);
+    printf("Printing top %d words %d characters or more.\n", num_words, num_chars);
     for (int i = 0; i < words->used; i++)
     {
-        printf("   '%s': %d\n", words->arr[i].word, words->arr[i].freq);
+        printf("Number %d is '%s' with a count of %d\n", 
+            i + 1, words->arr[i].word, words->arr[i].freq);
     }
 }
 
@@ -306,16 +360,15 @@ void *process_chunk( void *arg )
     // Tokenization and processing of chunk
     char *lasts = chunk;
     char *token = strtok_r(chunk, delim, &lasts);
-    while (token != NULL) {
-
+    while (token != NULL) 
+    {
         // Check if token length satisfied string length requirement
-        if (strlen(token) >= STRING_LENGTH) {
-
+        if (strlen(token) >= STRING_LENGTH) 
+        {
             // Check if token exists in word array; initialize to false
             char exists = 0;
             for (int i = 0; i < tinfo->words->used; i++)
             {
-
                 // Increment word count if token matches a word in the array
                 if (tinfo->words->arr[i].word != NULL && 
                     strcasecmp(tinfo->words->arr[i].word, token) == 0)
@@ -336,8 +389,8 @@ void *process_chunk( void *arg )
             }
             
             // Insert new word into array if it does not already exist
-            if (!exists) {
-
+            if (!exists) 
+            {
                 // Mutex necessary for inserting new word into array
                 if (pthread_mutex_lock(&tinfo->mutex))
                 {
